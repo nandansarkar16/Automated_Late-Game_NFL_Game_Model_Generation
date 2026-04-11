@@ -328,6 +328,7 @@ def genetic_search(search_cfg: Dict, eval_cfg: Dict):
                 "best_penalties": copy.deepcopy(best_eval.get("penalties", {})),
                 "best_solver_summary": summarize_solver_meta(best_eval.get("solver_meta", [])),
                 "best_metrics": copy.deepcopy(best_eval["metrics"]),
+                "best_params": copy.deepcopy(best_params),
                 "tuple_delta_from_prev_best": delta_from_prev,
                 "tuple_delta_from_base": delta_from_base,
             }

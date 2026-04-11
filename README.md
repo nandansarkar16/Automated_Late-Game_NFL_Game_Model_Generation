@@ -87,3 +87,34 @@ Each run writes:
 - `report.md` (auto summary)
 
 For heavy debug runs, heartbeat logs may also be written to `results/.../heartbeat.jsonl`.
+
+## Zoo run helper
+
+For long runs, use the helper script instead of running the experiment command manually.
+
+Start in background:
+
+```bash
+python3 zoo_run.py start --config configs/m1_zoo_full.json --out results/zoo_full
+```
+
+Check progress + stage + ETA:
+
+```bash
+python3 zoo_run.py status --out results/zoo_full
+```
+
+Tail heartbeat/progress/log output:
+
+```bash
+python3 zoo_run.py tail --out results/zoo_full --tail-lines 40
+```
+
+Stop run:
+
+```bash
+python3 zoo_run.py stop --out results/zoo_full
+```
+
+`configs/m1_zoo_full.json` is the default full config with `max_time_ticks=30`, which is a better runtime/reachability tradeoff than 45 on local hardware.
+
