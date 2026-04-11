@@ -2,13 +2,13 @@
   "master_seed": 20260224,
   "search": {
     "seed": 20260224,
-    "population": 48,
-    "elites": 6,
+    "population": 16,
+    "elites": 3,
     "tournament_size": 3,
     "crossover_rate": 0.7,
     "mutation_rate": 0.2,
-    "generations": 40,
-    "reeval_top_k": 4,
+    "generations": 12,
+    "reeval_top_k": 2,
     "reeval_reps": 1,
     "reeval_seed_step": 1000,
     "log_generations": true,
@@ -123,8 +123,8 @@
     }
   },
   "eval": {
-    "seeds": [11, 19, 23],
-    "sim_games": 300,
+    "seeds": [11, 19],
+    "sim_games": 200,
     "policy_probe_states": 800,
     "balance_target": 0.5,
     "balance_tolerance": 0.15,
