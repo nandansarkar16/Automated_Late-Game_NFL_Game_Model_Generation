@@ -1,0 +1,450 @@
+{
+  "master_seed": 20260305,
+  "search": {
+    "seed": 20260305,
+    "population": 16,
+    "elites": 3,
+    "tournament_size": 3,
+    "crossover_rate": 0.75,
+    "mutation_rate": 0.25,
+    "generations": 120,
+    "reeval_top_k": 1,
+    "reeval_reps": 1,
+    "reeval_seed_step": 1000,
+    "genome_space": {
+      "prob_sigma": 0.06,
+      "continuous": {
+        "max_time_ticks": {
+          "min": 6,
+          "max": 10,
+          "sigma": 1.0
+        }
+      },
+      "discrete": {
+        "turnover_on_downs": {
+          "values": [
+            true,
+            false
+          ]
+        }
+      }
+    },
+    "base_params": {
+      "offense_plays": [
+        "run",
+        "short_pass",
+        "deep_pass"
+      ],
+      "defense_plays": [
+        "base",
+        "blitz",
+        "prevent"
+      ],
+      "max_time_ticks": 8,
+      "max_score_diff": 21,
+      "turnover_on_downs": true,
+      "field_goal": {
+        "enabled": true,
+        "yardline_threshold": 35,
+        "success_prob": 0.78,
+        "miss_score_cost": 1
+      },
+      "punt": {
+        "enabled": true,
+        "yardline_threshold": 55,
+        "net_yards": 40,
+        "touchback_prob": 0.25,
+        "pin_prob": 0.2,
+        "pin_yardline": 95,
+        "touchback_score_cost": 2,
+        "pin_score_cost": 1,
+        "standard_score_cost": 2
+      },
+      "initial_state_distribution": [
+        {
+          "state": [
+            80,
+            1,
+            10,
+            8,
+            0
+          ],
+          "prob": 0.35
+        },
+        {
+          "state": [
+            65,
+            2,
+            7,
+            7,
+            -3
+          ],
+          "prob": 0.3
+        },
+        {
+          "state": [
+            45,
+            3,
+            6,
+            6,
+            0
+          ],
+          "prob": 0.2
+        },
+        {
+          "state": [
+            30,
+            1,
+            10,
+            8,
+            3
+          ],
+          "prob": 0.15
+        }
+      ],
+      "play_outcomes": {
+        "run|base": [
+          {
+            "yards": -1,
+            "time": 4,
+            "turnover": false,
+            "prob": 0.2
+          },
+          {
+            "yards": 20,
+            "time": 3,
+            "turnover": false,
+            "prob": 0.05
+          },
+          {
+            "yards": 10,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.25
+          },
+          {
+            "yards": 7,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.1
+          },
+          {
+            "yards": 4,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.4
+          }
+        ],
+        "run|blitz": [
+          {
+            "yards": 1,
+            "time": 3,
+            "turnover": false,
+            "prob": 0.2
+          },
+          {
+            "yards": 10,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.05
+          },
+          {
+            "yards": 5,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.25
+          },
+          {
+            "yards": 1,
+            "time": 4,
+            "turnover": false,
+            "prob": 0.1
+          },
+          {
+            "yards": 2,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.4
+          }
+        ],
+        "run|prevent": [
+          {
+            "yards": 8,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.2
+          },
+          {
+            "yards": 20,
+            "time": 3,
+            "turnover": false,
+            "prob": 0.05
+          },
+          {
+            "yards": 4,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.25
+          },
+          {
+            "yards": 2,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.1
+          },
+          {
+            "yards": 6,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.4
+          }
+        ],
+        "short_pass|base": [
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": true,
+            "prob": 0.2
+          },
+          {
+            "yards": -7,
+            "time": 4,
+            "turnover": false,
+            "prob": 0.05
+          },
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": false,
+            "prob": 0.25
+          },
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": true,
+            "prob": 0.1
+          },
+          {
+            "yards": 24,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.4
+          }
+        ],
+        "short_pass|blitz": [
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": false,
+            "prob": 0.2
+          },
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": true,
+            "prob": 0.05
+          },
+          {
+            "yards": -6,
+            "time": 4,
+            "turnover": false,
+            "prob": 0.25
+          },
+          {
+            "yards": 18,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.1
+          },
+          {
+            "yards": 13,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.4
+          }
+        ],
+        "short_pass|prevent": [
+          {
+            "yards": 19,
+            "time": 4,
+            "turnover": false,
+            "prob": 0.2
+          },
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": true,
+            "prob": 0.05
+          },
+          {
+            "yards": 22,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.25
+          },
+          {
+            "yards": 47,
+            "time": 3,
+            "turnover": false,
+            "prob": 0.1
+          },
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": false,
+            "prob": 0.4
+          }
+        ],
+        "deep_pass|base": [
+          {
+            "yards": 28,
+            "time": 3,
+            "turnover": false,
+            "prob": 0.2
+          },
+          {
+            "yards": -9,
+            "time": 4,
+            "turnover": false,
+            "prob": 0.05
+          },
+          {
+            "yards": 47,
+            "time": 3,
+            "turnover": false,
+            "prob": 0.25
+          },
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": false,
+            "prob": 0.1
+          },
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": false,
+            "prob": 0.4
+          }
+        ],
+        "deep_pass|blitz": [
+          {
+            "yards": 30,
+            "time": 3,
+            "turnover": false,
+            "prob": 0.2
+          },
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": true,
+            "prob": 0.05
+          },
+          {
+            "yards": 8,
+            "time": 2,
+            "turnover": false,
+            "prob": 0.25
+          },
+          {
+            "yards": -8,
+            "time": 4,
+            "turnover": false,
+            "prob": 0.1
+          },
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": false,
+            "prob": 0.4
+          }
+        ],
+        "deep_pass|prevent": [
+          {
+            "yards": 38,
+            "time": 3,
+            "turnover": false,
+            "prob": 0.2
+          },
+          {
+            "yards": -9,
+            "time": 4,
+            "turnover": false,
+            "prob": 0.05
+          },
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": false,
+            "prob": 0.25
+          },
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": true,
+            "prob": 0.1
+          },
+          {
+            "yards": 0,
+            "time": 1,
+            "turnover": false,
+            "prob": 0.4
+          }
+        ]
+      }
+    },
+    "outcomes_per_combo": 5,
+    "vector_gene": {
+      "yards_min": -20,
+      "yards_max": 60,
+      "time_min": 1,
+      "time_max": 8,
+      "turnover_min": 0.0,
+      "turnover_max": 1.0,
+      "turnover_threshold": 0.5,
+      "init_sigma": 2.0
+    },
+    "log_generations": true,
+    "generation_log_path": "results/m1_comprehensive/progress.jsonl"
+  },
+  "eval": {
+    "seeds": [
+      11,
+      19
+    ],
+    "sim_games": 60,
+    "policy_probe_states": 140,
+    "constraint_penalty_weight": 0.1,
+    "balance_target": 0.5,
+    "balance_tolerance": 0.15,
+    "balance_weight": 0.14285714285714285,
+    "yards_score_weight": 0.14285714285714285,
+    "yards_per_play_range": [
+      2.0,
+      9.0
+    ],
+    "realism_slack": 8.0,
+    "plausibility": {
+      "expected_yards_min": -3.0,
+      "expected_yards_max": 12.0,
+      "expected_yards_slack": 8.0,
+      "expected_time_min": 1.5,
+      "expected_time_max": 5.5,
+      "expected_time_slack": 2.0,
+      "expected_turnover_min": 0.01,
+      "expected_turnover_max": 0.35,
+      "expected_turnover_slack": 0.2
+    },
+    "weights": [
+      0.14285714285714285,
+      0.14285714285714285,
+      0.14285714285714285,
+      0.14285714285714285,
+      0.14285714285714285
+    ],
+    "solver": {
+      "type": "dp_lp",
+      "tol": 1e-09
+    }
+  }
+}

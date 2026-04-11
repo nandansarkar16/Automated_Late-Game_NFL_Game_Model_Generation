@@ -1,0 +1,23 @@
+# macOS noise
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+
+# Local envs
+.venv/
+venv/
+.env
+
+# Test/cache
+.pytest_cache/
+.mypy_cache/
+.coverage
+
+# Run outputs
+results/
