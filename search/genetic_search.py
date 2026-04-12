@@ -1,6 +1,7 @@
 # GA outer loop: mutate tuple genes, evaluate, and log progress.
 import copy
 import json
+import os
 import random
 import time
 from typing import Dict, List, Sequence, Tuple
@@ -176,6 +177,12 @@ def _tuple_change_summary(reference_params: Dict, current_params: Dict, combos: 
     }
 
 
+def _checkpoint_file(checkpoint_base: str | None) -> str | None:
+    if not checkpoint_base:
+        return None
+    return checkpoint_base + ".pkl"
+
+
 def genetic_search(search_cfg: Dict, eval_cfg: Dict):
     rng = random.Random(search_cfg.get("seed", 12345))
 
@@ -205,6 +212,7 @@ def genetic_search(search_cfg: Dict, eval_cfg: Dict):
     generation_log_path = search_cfg.get("generation_log_path")
     heartbeat_log_path = search_cfg.get("heartbeat_log_path")
     heartbeat_every = max(1, int(search_cfg.get("heartbeat_every", 1)))
+    checkpoint_base = search_cfg.get("checkpoint_base")
     eval_counter = 0
     cache_hit_counter = 0
     cache_miss_counter = 0
@@ -347,41 +355,88 @@ def genetic_search(search_cfg: Dict, eval_cfg: Dict):
                 flush=True,
             )
         last_best_params = copy.deepcopy(best_params)
+        ga_instance._resume_history = copy.deepcopy(history)
+        ga_instance._resume_last_best_params = copy.deepcopy(last_best_params)
+        if checkpoint_base:
+            ga_instance.save(checkpoint_base)
 
-    initial_population = []
-    initial_population.append(base_solution)
-    noise_sigma = float(vector_cfg.get("init_sigma", 2.0))
-    for _ in range(pop_size - 1):
-        v = [g + rng.gauss(0.0, noise_sigma) for g in base_solution]
-        initial_population.append(v)
+    checkpoint_path = _checkpoint_file(checkpoint_base)
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        ga = pygad.load(checkpoint_base)
+        completed = int(getattr(ga, "generations_completed", 0))
+        remaining = max(0, generations - completed)
+        ga.num_generations = remaining
+        if heartbeat_log_path:
+            with open(heartbeat_log_path, "a", encoding="utf-8") as hlog:
+                hlog.write(
+                    json.dumps(
+                        {
+                            "event": "ga_resume_loaded",
+                            "completed_generations": completed,
+                            "remaining_generations": remaining,
+                            "checkpoint_path": checkpoint_path,
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+        if remaining == 0:
+            best_solution, _, _ = ga.best_solution()
+            best_params = _decode_solution_to_params(
+                best_solution,
+                base_params,
+                combos,
+                outcomes_per_combo,
+                fixed_probs,
+                vector_cfg,
+            )
+            _renormalize_probs(best_params)
+            history = copy.deepcopy(getattr(ga, "_resume_history", []))
+            return best_params, history
+    else:
+        initial_population = []
+        initial_population.append(base_solution)
+        noise_sigma = float(vector_cfg.get("init_sigma", 2.0))
+        for _ in range(pop_size - 1):
+            v = [g + rng.gauss(0.0, noise_sigma) for g in base_solution]
+            initial_population.append(v)
 
-    ga = pygad.GA(
-        random_seed=int(search_cfg.get("seed", 12345)),
-        num_generations=generations,
-        sol_per_pop=pop_size,
-        num_parents_mating=max(2, pop_size // 2),
-        num_genes=num_genes,
-        initial_population=initial_population,
-        gene_space=gene_space,
-        gene_type=float,
-        parent_selection_type="tournament",
-        K_tournament=tournament,
-        keep_elitism=min(elites, pop_size),
-        crossover_type="single_point",
-        crossover_probability=crossover_rate,
-        mutation_type="random",
-        mutation_probability=mutation_rate,
-        fitness_func=fitness_func,
-        on_generation=on_generation,
-        suppress_warnings=True,
-    )
+        ga = pygad.GA(
+            random_seed=int(search_cfg.get("seed", 12345)),
+            num_generations=generations,
+            sol_per_pop=pop_size,
+            num_parents_mating=max(2, pop_size // 2),
+            num_genes=num_genes,
+            initial_population=initial_population,
+            gene_space=gene_space,
+            gene_type=float,
+            parent_selection_type="tournament",
+            K_tournament=tournament,
+            keep_elitism=min(elites, pop_size),
+            crossover_type="single_point",
+            crossover_probability=crossover_rate,
+            mutation_type="random",
+            mutation_probability=mutation_rate,
+            fitness_func=fitness_func,
+            on_generation=on_generation,
+            suppress_warnings=True,
+        )
+        ga._resume_history = []
+        ga._resume_last_best_params = copy.deepcopy(base_params)
     ga.run()
 
-    best_solution, best_fitness, _ = ga.best_solution()
-    best_eval = cache[_solution_key(best_solution)]
+    history = copy.deepcopy(getattr(ga, "_resume_history", history))
+    best_solution, _, _ = ga.best_solution()
+    best_params = _decode_solution_to_params(
+        best_solution,
+        base_params,
+        combos,
+        outcomes_per_combo,
+        fixed_probs,
+        vector_cfg,
+    )
 
     # Ensure fixed probabilities remain normalized in final emitted params.
-    best_params = copy.deepcopy(best_eval["params"])
     _renormalize_probs(best_params)
 
     return best_params, history

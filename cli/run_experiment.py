@@ -116,8 +116,9 @@ def run_experiment(config: dict, out_dir: str):
     master_seed = int(config.get("master_seed", 20260224))
     random.seed(master_seed)
 
-    search_cfg = config["search"]
+    search_cfg = dict(config["search"])
     eval_cfg = config["eval"]
+    search_cfg["checkpoint_base"] = str(Path(out_dir) / "ga_checkpoint")
 
     best_params, history = genetic_search(search_cfg, eval_cfg)
     best_eval = evaluate_candidate(best_params, eval_cfg)

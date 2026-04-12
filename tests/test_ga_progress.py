@@ -119,6 +119,30 @@ class GAProgressTests(unittest.TestCase):
             moved = len({round(x, 8) for x in best_vals}) > 1 or len({round(x, 8) for x in mean_vals}) > 1
             self.assertTrue(moved)
 
+    def test_ga_can_resume_from_checkpoint(self):
+        cfg = medium_config()
+        cfg["search"]["population"] = 4
+        cfg["search"]["elites"] = 1
+        cfg["search"]["generations"] = 1
+        cfg["eval"]["seeds"] = [11]
+        cfg["eval"]["sim_games"] = 10
+        cfg["eval"]["policy_probe_states"] = 20
+
+        with tempfile.TemporaryDirectory() as out:
+            run_experiment(cfg, out)
+
+            cfg["search"]["generations"] = 2
+            run_experiment(cfg, out)
+
+            import csv
+            import os
+
+            with open(os.path.join(out, "history.csv")) as f:
+                rows = list(csv.DictReader(f))
+
+            self.assertEqual(len(rows), 2)
+            self.assertEqual([int(r["generation"]) for r in rows], [0, 1])
+
 
 if __name__ == "__main__":
     unittest.main()
