@@ -23,6 +23,14 @@ def _base_params():
             "standard_score_cost": 2,
         },
         "initial_state_distribution": [{"state": [70, 1, 10, 12, 0], "prob": 1.0}],
+        "opponent_response": {
+            "clock_ticks": [2],
+            "clock_probs": [1.0],
+            "deep_own_territory": [1.0, 0.0, 0.0],
+            "normal": [1.0, 0.0, 0.0],
+            "short_field": [1.0, 0.0, 0.0],
+            "score_values": [0, 3, 7],
+        },
         "play_outcomes": {},
     }
     for op in params["offense_plays"]:
@@ -59,6 +67,39 @@ class QuarterStrategyTests(unittest.TestCase):
         yardlines = sorted({s[0] for _, s in transitions})
         self.assertIn(80, yardlines)
         self.assertIn(95, yardlines)
+
+    def test_touchdown_uses_opponent_response_clock(self):
+        params = _base_params()
+        params["play_outcomes"]["run|base"] = [
+            {"yards": 80, "time": 2, "turnover": False, "prob": 1.0},
+        ]
+        params["opponent_response"]["normal"] = [1.0, 0.0, 0.0]
+        params["opponent_response"]["clock_ticks"] = [4]
+        params["opponent_response"]["clock_probs"] = [1.0]
+        model = QuarterStrategy(params, seed=4)
+
+        transitions = model.action_pair_transitions((70, 1, 10, 12, 0), 0, 0)
+        self.assertEqual(len(transitions), 1)
+        prob, nxt = transitions[0]
+        self.assertAlmostEqual(prob, 1.0, places=9)
+        self.assertEqual(nxt, (75, 1, 10, 6, 7))
+
+    def test_turnover_short_field_response_applies_opponent_points(self):
+        params = _base_params()
+        params["play_outcomes"]["run|base"] = [
+            {"yards": 0, "time": 2, "turnover": True, "prob": 1.0},
+        ]
+        params["turnover_score_cost"] = 3
+        params["opponent_response"]["short_field"] = [0.0, 0.0, 1.0]
+        params["opponent_response"]["clock_ticks"] = [2]
+        params["opponent_response"]["clock_probs"] = [1.0]
+        model = QuarterStrategy(params, seed=5)
+
+        transitions = model.action_pair_transitions((70, 1, 10, 12, 0), 0, 0)
+        self.assertEqual(len(transitions), 1)
+        prob, nxt = transitions[0]
+        self.assertAlmostEqual(prob, 1.0, places=9)
+        self.assertEqual(nxt, (75, 1, 10, 8, -10))
 
     def test_probability_renormalize(self):
         params = _base_params()

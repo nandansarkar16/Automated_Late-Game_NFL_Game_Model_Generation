@@ -55,6 +55,17 @@ class QuarterStrategy:
 
         self.turnover_score_cost = int(params.get("turnover_score_cost", 3))
         self.turnover_on_downs_score_cost = int(params.get("turnover_on_downs_score_cost", 2))
+        self.opponent_response = params.get(
+            "opponent_response",
+            {
+                "clock_ticks": [2, 4, 6],
+                "clock_probs": [0.4, 0.4, 0.2],
+                "deep_own_territory": [0.68, 0.18, 0.14],
+                "normal": [0.5, 0.25, 0.25],
+                "short_field": [0.25, 0.25, 0.5],
+                "score_values": [0, 3, 7],
+            },
+        )
 
         self.init_distribution = params.get(
             "initial_state_distribution",
@@ -122,8 +133,17 @@ class QuarterStrategy:
             next_ticks = max(0, ticks - elapsed)
 
             if turnover:
-                nxt = self._normalize_state((75, 1, 10, next_ticks, score_diff - self.turnover_score_cost))
-                transitions.append((p, nxt))
+                transitions.extend(
+                    self._post_change_transitions(
+                        next_ticks=next_ticks,
+                        score_diff=score_diff,
+                        offense_points=0,
+                        possession_cost=self.turnover_score_cost,
+                        regime="short_field",
+                        reset_yardline=75,
+                        base_prob=p,
+                    )
+                )
                 continue
 
             next_yardline = yardline - yards
@@ -132,8 +152,17 @@ class QuarterStrategy:
             next_score_diff = score_diff
 
             if next_yardline <= 0:
-                nxt = self._normalize_state((75, 1, 10, next_ticks, next_score_diff + 7))
-                transitions.append((p, nxt))
+                transitions.extend(
+                    self._post_change_transitions(
+                        next_ticks=next_ticks,
+                        score_diff=next_score_diff,
+                        offense_points=7,
+                        possession_cost=0,
+                        regime="normal",
+                        reset_yardline=75,
+                        base_prob=p,
+                    )
+                )
                 continue
 
             if next_distance <= 0:
@@ -221,11 +250,29 @@ class QuarterStrategy:
 
         if self.field_goal.get("enabled", True) and yardline <= int(self.field_goal.get("yardline_threshold", 35)):
             success_prob = min(1.0, max(0.0, float(self.field_goal.get("success_prob", 0.78))))
-            made = self._normalize_state((75, 1, 10, next_ticks, score_diff + 3))
             miss_cost = int(self.field_goal.get("miss_score_cost", 1))
-            miss = self._normalize_state((75, 1, 10, next_ticks, score_diff - miss_cost))
-            out.append((base_prob * success_prob, made))
-            out.append((base_prob * (1.0 - success_prob), miss))
+            out.extend(
+                self._post_change_transitions(
+                    next_ticks=next_ticks,
+                    score_diff=score_diff,
+                    offense_points=3,
+                    possession_cost=0,
+                    regime="normal",
+                    reset_yardline=75,
+                    base_prob=base_prob * success_prob,
+                )
+            )
+            out.extend(
+                self._post_change_transitions(
+                    next_ticks=next_ticks,
+                    score_diff=score_diff,
+                    offense_points=0,
+                    possession_cost=miss_cost,
+                    regime="normal",
+                    reset_yardline=75,
+                    base_prob=base_prob * (1.0 - success_prob),
+                )
+            )
             return out
 
         if self.punt.get("enabled", True) and yardline >= int(self.punt.get("yardline_threshold", 55)):
@@ -247,19 +294,80 @@ class QuarterStrategy:
             pin_yardline = int(self.punt.get("pin_yardline", 95))
             net_yards = int(self.punt.get("net_yards", 40))
 
-            touchback = self._normalize_state((80, 1, 10, next_ticks, score_diff - touchback_cost))
-            pin = self._normalize_state((pin_yardline, 1, min(10, pin_yardline), next_ticks, score_diff - pin_cost))
             standard_yardline = max(20, min(95, 100 - max(1, yardline - net_yards)))
-            standard = self._normalize_state((standard_yardline, 1, min(10, standard_yardline), next_ticks, score_diff - standard_cost))
-
-            out.append((base_prob * touchback_prob, touchback))
-            out.append((base_prob * pin_prob, pin))
-            out.append((base_prob * rem, standard))
+            out.extend(
+                self._post_change_transitions(
+                    next_ticks=next_ticks,
+                    score_diff=score_diff,
+                    offense_points=0,
+                    possession_cost=touchback_cost,
+                    regime="normal",
+                    reset_yardline=80,
+                    base_prob=base_prob * touchback_prob,
+                )
+            )
+            out.extend(
+                self._post_change_transitions(
+                    next_ticks=next_ticks,
+                    score_diff=score_diff,
+                    offense_points=0,
+                    possession_cost=pin_cost,
+                    regime="deep_own_territory",
+                    reset_yardline=pin_yardline,
+                    base_prob=base_prob * pin_prob,
+                )
+            )
+            out.extend(
+                self._post_change_transitions(
+                    next_ticks=next_ticks,
+                    score_diff=score_diff,
+                    offense_points=0,
+                    possession_cost=standard_cost,
+                    regime="normal",
+                    reset_yardline=standard_yardline,
+                    base_prob=base_prob * rem,
+                )
+            )
             return out
 
-        tod = self._normalize_state((75, 1, 10, next_ticks, score_diff - self.turnover_on_downs_score_cost))
-        out.append((base_prob, tod))
+        out.extend(
+            self._post_change_transitions(
+                next_ticks=next_ticks,
+                score_diff=score_diff,
+                offense_points=0,
+                possession_cost=self.turnover_on_downs_score_cost,
+                regime="short_field",
+                reset_yardline=75,
+                base_prob=base_prob,
+            )
+        )
         return out
+
+    def _post_change_transitions(
+        self,
+        next_ticks: int,
+        score_diff: int,
+        offense_points: int,
+        possession_cost: int,
+        regime: str,
+        reset_yardline: int,
+        base_prob: float,
+    ) -> List[Tuple[float, State]]:
+        score_values = [int(v) for v in self.opponent_response.get("score_values", [0, 3, 7])]
+        score_probs = self._normalized_probs(self.opponent_response.get(regime, self.opponent_response.get("normal", [0.5, 0.25, 0.25])))
+        clock_values = [int(v) for v in self.opponent_response.get("clock_ticks", [2, 4, 6])]
+        clock_probs = self._normalized_probs(self.opponent_response.get("clock_probs", [0.4, 0.4, 0.2]))
+
+        transitions: List[Tuple[float, State]] = []
+        for score_p, opp_points in zip(score_probs, score_values):
+            for clock_p, extra_ticks in zip(clock_probs, clock_values):
+                final_ticks = max(0, next_ticks - extra_ticks)
+                final_score_diff = score_diff + offense_points - possession_cost - opp_points
+                state = self._normalize_state(
+                    (reset_yardline, 1, min(10, reset_yardline), final_ticks, final_score_diff)
+                )
+                transitions.append((base_prob * score_p * clock_p, state))
+        return transitions
 
     def _normalize_state(self, state: State) -> State:
         yardline, down, distance, ticks, score_diff = state
@@ -302,3 +410,12 @@ class QuarterStrategy:
         if total <= 0.0:
             return [(1.0, self._normalize_state((75, 1, 10, 0, 0)))]
         return [(p / total, s) for s, p in merged.items()]
+
+    def _normalized_probs(self, probs: Sequence[float]) -> List[float]:
+        cleaned = [max(0.0, float(p)) for p in probs]
+        total = sum(cleaned)
+        if total <= 0.0:
+            if not cleaned:
+                return [1.0]
+            return [1.0 / len(cleaned)] * len(cleaned)
+        return [p / total for p in cleaned]

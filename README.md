@@ -8,6 +8,14 @@ The main workflow is:
 3. Score that game model with simulation-based metrics.
 4. Use a genetic algorithm to search for better game model parameters.
 
+The game is still intentionally simplified. The state is
+`(yardline, down, distance, time_ticks, score_diff)`, so it does not carry
+explicit possession or drive IDs. To make that abstraction less unrealistic,
+the environment now uses a compressed opponent-response jump after scores and
+other possession-ending events. That jump removes extra clock and applies a
+small opponent scoring distribution based on whether the opponent would be
+starting deep, in a normal situation, or on a short field.
+
 ## Project layout
 
 - `run_experiment.py`
@@ -19,7 +27,7 @@ The main workflow is:
 - `env/quarter_strategy.py`
   - core environment.
   - state is `(yardline, down, distance, time_ticks, score_diff)`.
-  - handles transition logic for play outcomes, first downs, touchdowns, field goals, and punts.
+  - handles play outcomes, first downs, touchdowns, field goals, punts, and the compressed opponent-response layer after possession changes.
 
 - `agents/dp_lp_solver.py`
   - inner-loop solver.
@@ -118,3 +126,6 @@ python3 zoo_run.py stop --out results/zoo_full
 
 `configs/m1_zoo_full.json` is the default full config with `max_time_ticks=30`, which is a better runtime/reachability tradeoff than 45 on local hardware.
 
+If a long Zoo run stops mid-way, restarting the same output directory now
+resumes from the last completed GA generation using a saved checkpoint instead
+of starting from generation 0 again.
