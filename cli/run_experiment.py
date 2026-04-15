@@ -119,6 +119,8 @@ def run_experiment(config: dict, out_dir: str):
     search_cfg = dict(config["search"])
     eval_cfg = config["eval"]
     search_cfg["checkpoint_base"] = str(Path(out_dir) / "ga_checkpoint")
+    search_cfg["generation_log_path"] = str(Path(out_dir) / "progress.jsonl")
+    search_cfg["heartbeat_log_path"] = str(Path(out_dir) / "heartbeat.jsonl")
 
     best_params, history = genetic_search(search_cfg, eval_cfg)
     best_eval = evaluate_candidate(best_params, eval_cfg)

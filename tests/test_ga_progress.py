@@ -143,6 +143,28 @@ class GAProgressTests(unittest.TestCase):
             self.assertEqual(len(rows), 2)
             self.assertEqual([int(r["generation"]) for r in rows], [0, 1])
 
+    def test_ga_multiple_resumes_keep_monotonic_generation_numbers(self):
+        cfg = medium_config()
+        cfg["search"]["population"] = 4
+        cfg["search"]["elites"] = 1
+        cfg["eval"]["seeds"] = [11]
+        cfg["eval"]["sim_games"] = 10
+        cfg["eval"]["policy_probe_states"] = 20
+
+        with tempfile.TemporaryDirectory() as out:
+            for target_generations in [1, 2, 4]:
+                cfg["search"]["generations"] = target_generations
+                run_experiment(cfg, out)
+
+            import csv
+            import os
+
+            with open(os.path.join(out, "history.csv")) as f:
+                rows = list(csv.DictReader(f))
+
+            self.assertEqual(len(rows), 4)
+            self.assertEqual([int(r["generation"]) for r in rows], [0, 1, 2, 3])
+
 
 if __name__ == "__main__":
     unittest.main()

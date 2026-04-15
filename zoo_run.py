@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 from collections import deque
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Dict, List
 
@@ -21,7 +21,12 @@ STATUS_FILE = "zoo_status.json"
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _detach_child():
+    # Ignore terminal hangups so the long-running job survives disconnects.
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
 
 
 def _load_json(path: Path) -> Dict:
@@ -91,12 +96,17 @@ def start_run(config_path: Path, out_dir: Path):
     err_path = out_dir / "zoo_runner.err.log"
 
     with log_path.open("a", encoding="utf-8") as logf, err_path.open("a", encoding="utf-8") as errf:
+        logf.write(f"[{_now_iso()}] launching background job\n")
+        logf.flush()
         proc = subprocess.Popen(
             cmd,
             cwd=str(Path(__file__).resolve().parent),
+            stdin=subprocess.DEVNULL,
             stdout=logf,
             stderr=errf,
-            preexec_fn=os.setsid,
+            preexec_fn=_detach_child,
+            start_new_session=True,
+            close_fds=True,
             env={**os.environ, "PYTHONUNBUFFERED": "1"},
         )
 
@@ -173,7 +183,7 @@ def _build_status(meta: Dict) -> Dict:
     if started_at:
         try:
             start_dt = datetime.fromisoformat(started_at.replace("Z", ""))
-            elapsed_sec = max(0.0, (datetime.utcnow() - start_dt).total_seconds())
+            elapsed_sec = max(0.0, (datetime.now(UTC) - start_dt.replace(tzinfo=UTC)).total_seconds())
         except Exception:
             elapsed_sec = None
 

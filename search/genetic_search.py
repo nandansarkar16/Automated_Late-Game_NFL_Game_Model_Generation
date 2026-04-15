@@ -183,6 +183,22 @@ def _checkpoint_file(checkpoint_base: str | None) -> str | None:
     return checkpoint_base + ".pkl"
 
 
+def _load_existing_generation_history(generation_log_path: str | None) -> List[Dict]:
+    if not generation_log_path or not os.path.exists(generation_log_path):
+        return []
+    rows: List[Dict] = []
+    with open(generation_log_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except Exception:
+                continue
+    return rows
+
+
 def genetic_search(search_cfg: Dict, eval_cfg: Dict):
     rng = random.Random(search_cfg.get("seed", 12345))
 
@@ -218,6 +234,10 @@ def genetic_search(search_cfg: Dict, eval_cfg: Dict):
     cache_miss_counter = 0
     best_seen_fitness = float("-inf")
     run_start = time.time()
+    history = _load_existing_generation_history(generation_log_path)
+    last_best_params = copy.deepcopy(history[-1]["best_params"]) if history else copy.deepcopy(base_params)
+    generation_offset = len(history)
+    resumed_generation_count = 0
 
     def summarize_solver_meta(entries: List[Dict]) -> Dict:
         if not entries:
@@ -297,13 +317,24 @@ def genetic_search(search_cfg: Dict, eval_cfg: Dict):
         return fit
 
     def on_generation(ga_instance):
-        nonlocal last_best_params
+        nonlocal last_best_params, resumed_generation_count
         fits = ga_instance.last_generation_fitness
         if fits is None or len(fits) == 0:
             return
         best_idx = max(range(len(fits)), key=lambda i: fits[i])
         best_solution = ga_instance.population[best_idx]
-        best_eval = cache[_solution_key(best_solution)]
+        best_key = _solution_key(best_solution)
+        if best_key not in cache:
+            params = _decode_solution_to_params(
+                best_solution,
+                base_params,
+                combos,
+                outcomes_per_combo,
+                fixed_probs,
+                vector_cfg,
+            )
+            cache[best_key] = evaluate_candidate(params, eval_cfg)
+        best_eval = cache[best_key]
         best_params = best_eval["params"]
         delta_from_prev = _tuple_change_summary(last_best_params, best_params, combos, outcomes_per_combo)
         delta_from_base = _tuple_change_summary(base_params, best_params, combos, outcomes_per_combo)
@@ -315,9 +346,11 @@ def genetic_search(search_cfg: Dict, eval_cfg: Dict):
         fit_median = float(fit_sorted[len(fit_sorted) // 2])
         fit_var = sum((x - fit_mean) ** 2 for x in fit_list) / len(fit_list)
         fit_std = fit_var ** 0.5
+        generation_number = generation_offset + resumed_generation_count
+        resumed_generation_count += 1
         history.append(
             {
-                "generation": int(ga_instance.generations_completed - 1),
+                "generation": int(generation_number),
                 "best_fitness": float(best_eval["fitness"]),
                 "mean_fitness": fit_mean,
                 "min_fitness": fit_min,
@@ -345,7 +378,7 @@ def genetic_search(search_cfg: Dict, eval_cfg: Dict):
             with open(generation_log_path, "a", encoding="utf-8") as logf:
                 logf.write(json.dumps(history[-1], sort_keys=True) + "\n")
         if log_generations:
-            g = int(ga_instance.generations_completed - 1)
+            g = int(generation_number)
             changed = delta_from_prev["changed_outcomes_total"]
             print(
                 f"[gen {g}] best={best_eval['fitness']:.6f} mean={fit_mean:.6f} "
@@ -363,6 +396,8 @@ def genetic_search(search_cfg: Dict, eval_cfg: Dict):
     checkpoint_path = _checkpoint_file(checkpoint_base)
     if checkpoint_path and os.path.exists(checkpoint_path):
         ga = pygad.load(checkpoint_base)
+        ga.fitness_func = fitness_func
+        ga.on_generation = on_generation
         completed = int(getattr(ga, "generations_completed", 0))
         remaining = max(0, generations - completed)
         ga.num_generations = remaining
@@ -391,7 +426,6 @@ def genetic_search(search_cfg: Dict, eval_cfg: Dict):
                 vector_cfg,
             )
             _renormalize_probs(best_params)
-            history = copy.deepcopy(getattr(ga, "_resume_history", []))
             return best_params, history
     else:
         initial_population = []
@@ -421,8 +455,8 @@ def genetic_search(search_cfg: Dict, eval_cfg: Dict):
             on_generation=on_generation,
             suppress_warnings=True,
         )
-        ga._resume_history = []
-        ga._resume_last_best_params = copy.deepcopy(base_params)
+        ga._resume_history = copy.deepcopy(history)
+        ga._resume_last_best_params = copy.deepcopy(last_best_params)
     ga.run()
 
     history = copy.deepcopy(getattr(ga, "_resume_history", history))
