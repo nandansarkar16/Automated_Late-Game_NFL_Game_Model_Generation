@@ -129,3 +129,35 @@ python3 zoo_run.py stop --out results/zoo_full
 If a long Zoo run stops mid-way, restarting the same output directory now
 resumes from the last completed GA generation using a saved checkpoint instead
 of starting from generation 0 again.
+
+## Local overnight runs
+
+`configs/m1_local_overnight.json` is a smaller but still legitimate config
+targeted at laptop-scale runs (~2-5h wall clock). It uses `max_time_ticks=12`,
+tightened `vector_gene` bounds to prevent the GA from wandering into gene
+regions that explode the reachable state set, and 2 seeds per eval.
+
+Before committing to a long run, sanity-check wall clock with the calibrator:
+
+```bash
+python3 tools/calibrate_runtime.py \
+  --config configs/m1_local_overnight.json \
+  --seeds 2 --population 10 --generations 12 \
+  --target-hours 5 --stress 4
+```
+
+`--stress N` samples N random candidates from the GA gene space and reports
+the real per-eval time distribution (min/median/mean/max). The base eval alone
+is not representative because the GA mutates genes that directly drive solver
+cost.
+
+Launch the same way as a Zoo run:
+
+```bash
+python3 zoo_run.py start --config configs/m1_local_overnight.json --out results/m1_local_overnight
+python3 zoo_run.py status --out results/m1_local_overnight
+```
+
+The status output now includes a one-line banner with current generation,
+candidate, seed, DP time layer, elapsed, and ETA. Use `--verbose` for the
+full JSON dump.

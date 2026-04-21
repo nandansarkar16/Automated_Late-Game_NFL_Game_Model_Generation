@@ -138,6 +138,32 @@ def start_run(config_path: Path, out_dir: Path):
     print(f"Use: python3 zoo_run.py status")
 
 
+def _fmt_hms(sec) -> str:
+    if sec is None:
+        return "?"
+    try:
+        sec = max(0, int(round(float(sec))))
+    except Exception:
+        return "?"
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:d}h{m:02d}m{s:02d}s"
+
+
+def _find_latest(rows: List[Dict], event: str) -> Dict:
+    for row in reversed(rows):
+        if row.get("event") == event:
+            return row
+    return {}
+
+
+def _find_latest_any(rows: List[Dict], events: set) -> Dict:
+    for row in reversed(rows):
+        if row.get("event") in events:
+            return row
+    return {}
+
+
 def _build_status(meta: Dict) -> Dict:
     out_dir = Path(meta["out_dir"])
     progress_path = out_dir / "progress.jsonl"
@@ -147,7 +173,9 @@ def _build_status(meta: Dict) -> Dict:
     running = pid > 0 and _is_pid_running(pid)
 
     progress_rows = _tail_jsonl(progress_path, n=1000)
-    heartbeat_rows = _tail_jsonl(heartbeat_path, n=200)
+    # Pull a generous heartbeat window so we can reconstruct the whole current
+    # candidate's state, not just whichever event happened last.
+    heartbeat_rows = _tail_jsonl(heartbeat_path, n=2000)
 
     completed_gens = len(progress_rows)
     total_gens = int(meta.get("search", {}).get("generations", 0))
@@ -156,26 +184,80 @@ def _build_status(meta: Dict) -> Dict:
     latest_progress = progress_rows[-1] if progress_rows else {}
     latest_heartbeat = heartbeat_rows[-1] if heartbeat_rows else {}
 
-    # Stage text based on latest heartbeat event.
-    stage = "idle"
-    if latest_heartbeat:
-        ev = latest_heartbeat.get("event", "")
-        if ev == "reachable_layer_done":
-            stage = f"reachable states build (seed={latest_heartbeat.get('seed')}, t={latest_heartbeat.get('time_layer')})"
-        elif ev == "solver_time_layer_done":
-            stage = f"dp solve layer (seed={latest_heartbeat.get('seed')}, t={latest_heartbeat.get('time_layer')})"
-        elif ev == "seed_start":
-            stage = f"seed solve started (seed={latest_heartbeat.get('seed')})"
-        elif ev == "seed_solved":
-            stage = f"seed solved (seed={latest_heartbeat.get('seed')})"
-        elif ev == "seed_sim_done":
-            stage = f"seed simulation done (seed={latest_heartbeat.get('seed')})"
-        elif ev == "candidate_eval":
-            stage = "candidate evaluation complete"
-        elif ev == "candidate_eval_done":
-            stage = "candidate evaluation done"
+    ga_eval_event = _find_latest_any(heartbeat_rows, {"candidate_eval", "cache_hit"})
+    cand_start = _find_latest(heartbeat_rows, "candidate_eval_start")
+    cand_done = _find_latest(heartbeat_rows, "candidate_eval_done")
+    seed_event = _find_latest_any(heartbeat_rows, {"seed_start", "seed_solved", "seed_sim_done"})
+    dp_event = _find_latest(heartbeat_rows, "solver_time_layer_done")
+    reach_event = _find_latest(heartbeat_rows, "reachable_layer_done")
+
+    gen_in_progress = ga_eval_event.get("generation_in_progress")
+    if gen_in_progress is None:
+        gen_in_progress = completed_gens
+    solution_idx = ga_eval_event.get("solution_idx")
+    pop = int(meta.get("search", {}).get("population", 0))
+
+    current_seed = seed_event.get("seed")
+
+    # Read config once (same file already parsed in start_run) so we can pull
+    # seeds_total and max_time_ticks without re-opening the file twice.
+    cfg_snapshot: Dict = {}
+    try:
+        cfg_path = Path(meta.get("config_path", ""))
+        if cfg_path.exists():
+            cfg_snapshot = json.loads(cfg_path.read_text())
+    except Exception:
+        cfg_snapshot = {}
+
+    seeds_total = len(cfg_snapshot.get("eval", {}).get("seeds", []) or []) or None
+
+    dp_layer = dp_event.get("time_layer") if dp_event else None
+    reach_layer = reach_event.get("time_layer") if reach_event else None
+    max_ticks = None
+    if cand_start and cand_start.get("max_time_ticks"):
+        try:
+            max_ticks = int(cand_start["max_time_ticks"])
+        except Exception:
+            max_ticks = None
+    if max_ticks is None:
+        try:
+            max_ticks = int(cfg_snapshot.get("search", {}).get("base_params", {}).get("max_time_ticks", 0)) or None
+        except Exception:
+            max_ticks = None
+
+    # Figure out the sub-candidate phase (which of the DP stages is happening right now).
+    stage_parts = []
+    if total_gens:
+        gen_display = int(gen_in_progress)
+        # During an in-progress candidate we want 1-indexed "gen X/total",
+        # but once an eval has finished we're already mid-way toward gen X+1
+        # until on_generation flips the counter.
+        if ga_eval_event and ga_eval_event is not cand_done:
+            gen_display += 1
+        stage_parts.append(f"gen {gen_display}/{total_gens}")
+    if pop and solution_idx is not None:
+        try:
+            stage_parts.append(f"cand {int(solution_idx) + 1}/{pop}")
+        except Exception:
+            pass
+    if current_seed is not None:
+        stage_parts.append(f"seed={current_seed}")
+
+    latest_ev = latest_heartbeat.get("event", "")
+    if latest_ev == "reachable_layer_done" and reach_layer is not None:
+        if max_ticks:
+            stage_parts.append(f"reach_layer {int(reach_layer)}/{max_ticks}")
         else:
-            stage = ev
+            stage_parts.append(f"reach_layer {int(reach_layer)}")
+    elif latest_ev == "solver_time_layer_done" and dp_layer is not None:
+        if max_ticks:
+            stage_parts.append(f"DP_layer {int(dp_layer)}/{max_ticks}")
+        else:
+            stage_parts.append(f"DP_layer {int(dp_layer)}")
+    elif latest_ev in {"seed_solved", "seed_sim_done"}:
+        stage_parts.append(latest_ev)
+    elif latest_ev in {"candidate_eval", "cache_hit", "candidate_eval_done"}:
+        stage_parts.append(latest_ev)
 
     elapsed_sec = None
     eta_sec = None
@@ -187,9 +269,34 @@ def _build_status(meta: Dict) -> Dict:
         except Exception:
             elapsed_sec = None
 
+    # ETA: prefer per-generation rate if we've finished at least one,
+    # else fall back to per-completed-candidate rate from heartbeat counts.
     if elapsed_sec is not None and completed_gens > 0 and total_gens > completed_gens:
         sec_per_gen = elapsed_sec / completed_gens
         eta_sec = sec_per_gen * (total_gens - completed_gens)
+    elif elapsed_sec is not None and ga_eval_event and total_gens and pop:
+        # Pre-first-generation fallback: extrapolate from candidates already
+        # completed, worst case assuming no future cache hits.
+        cache_misses = int(ga_eval_event.get("cache_misses", 0))
+        total_expected = max(1, total_gens * pop)
+        if cache_misses > 0:
+            eta_sec = elapsed_sec * (total_expected / cache_misses - 1)
+
+    stage_str = "  ".join(stage_parts) if stage_parts else (latest_ev or "idle")
+    if elapsed_sec is not None:
+        stage_str += f"  elapsed={_fmt_hms(elapsed_sec)}"
+    if eta_sec is not None:
+        stage_str += f"  ETA={_fmt_hms(eta_sec)}"
+
+    # Best-fitness trace for quick eyeballing.
+    best_so_far = None
+    mean_last = None
+    if progress_rows:
+        try:
+            best_so_far = max(float(r.get("best_fitness", float("-inf"))) for r in progress_rows)
+            mean_last = float(progress_rows[-1].get("mean_fitness", 0.0))
+        except Exception:
+            pass
 
     status = {
         "timestamp": _now_iso(),
@@ -200,7 +307,21 @@ def _build_status(meta: Dict) -> Dict:
             "total": total_gens,
             "percent": gen_pct,
         },
-        "latest_stage": stage,
+        "current_candidate": {
+            "generation_in_progress": gen_in_progress,
+            "solution_idx": solution_idx,
+            "population": pop,
+            "current_seed": current_seed,
+            "seeds_total": seeds_total,
+            "dp_layer": dp_layer,
+            "reach_layer": reach_layer,
+            "max_time_ticks": max_ticks,
+            "cache_hits": ga_eval_event.get("cache_hits") if ga_eval_event else None,
+            "cache_misses": ga_eval_event.get("cache_misses") if ga_eval_event else None,
+        },
+        "best_fitness_so_far": best_so_far,
+        "last_gen_mean_fitness": mean_last,
+        "latest_stage": stage_str,
         "latest_progress": latest_progress,
         "latest_heartbeat": latest_heartbeat,
         "counts": {
@@ -209,14 +330,16 @@ def _build_status(meta: Dict) -> Dict:
         },
         "timing": {
             "elapsed_sec": elapsed_sec,
+            "elapsed_hms": _fmt_hms(elapsed_sec) if elapsed_sec is not None else None,
             "eta_sec": eta_sec,
+            "eta_hms": _fmt_hms(eta_sec) if eta_sec is not None else None,
         },
         "paths": meta.get("logs", {}),
     }
     return status
 
 
-def status_run(out_dir: Path):
+def status_run(out_dir: Path, verbose: bool = False):
     meta_path = out_dir / META_FILE
     if not meta_path.exists():
         print("No run metadata found. Start with: python3 zoo_run.py start")
@@ -226,7 +349,23 @@ def status_run(out_dir: Path):
     status = _build_status(meta)
     _write_json(out_dir / STATUS_FILE, status)
 
-    print(json.dumps(status, indent=2, sort_keys=True))
+    run_state = "RUNNING" if status.get("running") else "STOPPED"
+    gen = status.get("generation", {})
+    best = status.get("best_fitness_so_far")
+    mean = status.get("last_gen_mean_fitness")
+    summary_bits = [
+        f"[{run_state}] pid={status.get('pid')}",
+        f"gens_done={gen.get('completed')}/{gen.get('total')}",
+        f"{status.get('latest_stage', '')}",
+    ]
+    if best is not None:
+        summary_bits.append(f"best={best:.4f}")
+    if mean is not None:
+        summary_bits.append(f"last_gen_mean={mean:.4f}")
+    print("  ".join(b for b in summary_bits if b))
+
+    if verbose:
+        print(json.dumps(status, indent=2, sort_keys=True))
 
 
 def stop_run(out_dir: Path):
@@ -278,6 +417,7 @@ def main():
     parser.add_argument("--config", default=DEFAULT_CONFIG)
     parser.add_argument("--out", default=DEFAULT_OUT)
     parser.add_argument("--tail-lines", type=int, default=30)
+    parser.add_argument("--verbose", action="store_true", help="Dump full status JSON, not just the one-line banner")
     args = parser.parse_args()
 
     out_dir = Path(args.out)
@@ -286,7 +426,7 @@ def main():
     if args.action == "start":
         start_run(config_path=config_path, out_dir=out_dir)
     elif args.action == "status":
-        status_run(out_dir=out_dir)
+        status_run(out_dir=out_dir, verbose=args.verbose)
     elif args.action == "stop":
         stop_run(out_dir=out_dir)
     elif args.action == "tail":
