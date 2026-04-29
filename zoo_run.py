@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Dict, List
 
 DEFAULT_CONFIG = "configs/m1_zoo_full.json"
-DEFAULT_OUT = "results/zoo_full"
+DEFAULT_OUT = "results/zoo_v2"
 META_FILE = "zoo_job_meta.json"
 STATUS_FILE = "zoo_status.json"
 
@@ -164,6 +164,64 @@ def _find_latest_any(rows: List[Dict], events: set) -> Dict:
     return {}
 
 
+def _search_cfg_from_meta(meta: Dict) -> Dict:
+    try:
+        cfg_path = Path(meta.get("config_path", ""))
+        if cfg_path.exists():
+            return json.loads(cfg_path.read_text()).get("search", {})
+    except Exception:
+        pass
+    return {}
+
+
+def _estimate_eta_sec(
+    heartbeat_rows: List[Dict],
+    total_gens: int,
+    population: int,
+    elites,
+) -> float | None:
+    """ETA in seconds, based on recent per-miss cost and remaining misses.
+
+    Uses an exponentially weighted average of the last N `candidate_eval`
+    durations (where N = min(half the completed misses, population)) so the
+    estimate tracks the GA's current cost regime rather than averaging gen 0
+    in forever.
+    """
+    if not heartbeat_rows or total_gens <= 0 or population <= 0:
+        return None
+    eval_rows = [
+        r for r in heartbeat_rows if r.get("event") == "candidate_eval"
+    ]
+    if not eval_rows:
+        return None
+    try:
+        elites_int = int(elites) if elites is not None else 1
+    except Exception:
+        elites_int = 1
+    elites_int = max(0, min(elites_int, population))
+
+    # Expected total misses: gen 0 runs all `population` slots fresh; each
+    # subsequent gen only re-evaluates population - elites new candidates
+    # (elites are carried through unchanged via keep_elitism).
+    expected_total = population + max(0, total_gens - 1) * max(1, population - elites_int)
+    completed = len(eval_rows)
+    remaining = max(0, expected_total - completed)
+    if remaining == 0:
+        return 0.0
+
+    # Exponentially weighted average of recent eval durations.
+    recent_n = max(population, min(completed, 2 * population))
+    recent = eval_rows[-recent_n:]
+    alpha = 2.0 / (recent_n + 1.0)
+    ewma = float(recent[0].get("candidate_eval_sec", 0.0))
+    for row in recent[1:]:
+        try:
+            ewma = alpha * float(row.get("candidate_eval_sec", 0.0)) + (1 - alpha) * ewma
+        except Exception:
+            continue
+    return float(remaining) * ewma
+
+
 def _build_status(meta: Dict) -> Dict:
     out_dir = Path(meta["out_dir"])
     progress_path = out_dir / "progress.jsonl"
@@ -269,18 +327,20 @@ def _build_status(meta: Dict) -> Dict:
         except Exception:
             elapsed_sec = None
 
-    # ETA: prefer per-generation rate if we've finished at least one,
-    # else fall back to per-completed-candidate rate from heartbeat counts.
-    if elapsed_sec is not None and completed_gens > 0 and total_gens > completed_gens:
-        sec_per_gen = elapsed_sec / completed_gens
-        eta_sec = sec_per_gen * (total_gens - completed_gens)
-    elif elapsed_sec is not None and ga_eval_event and total_gens and pop:
-        # Pre-first-generation fallback: extrapolate from candidates already
-        # completed, worst case assuming no future cache hits.
-        cache_misses = int(ga_eval_event.get("cache_misses", 0))
-        total_expected = max(1, total_gens * pop)
-        if cache_misses > 0:
-            eta_sec = elapsed_sec * (total_expected / cache_misses - 1)
+    # ETA: use per-cache-miss rate weighted toward recent evals instead of
+    # sec_per_completed_generation. Rationale:
+    #   - Gen 0 is a cold-start outlier (no elitism cache hits yet), so a
+    #     naive elapsed/completed_gens rate over-predicts by 10-20%.
+    #   - The GA's per-eval cost shifts as the population walks through gene
+    #     space; recent evals are a better predictor than early ones.
+    #   - Heartbeats carry the real number of completed misses, so we can
+    #     compute s/miss × expected_remaining_misses directly.
+    eta_sec = _estimate_eta_sec(
+        heartbeat_rows=heartbeat_rows,
+        total_gens=total_gens,
+        population=pop,
+        elites=_search_cfg_from_meta(meta).get("elites", 1),
+    )
 
     stage_str = "  ".join(stage_parts) if stage_parts else (latest_ev or "idle")
     if elapsed_sec is not None:

@@ -4,6 +4,7 @@ import json
 import os
 import random
 import time
+import traceback
 from typing import Dict, List, Sequence, Tuple
 
 import pygad
@@ -316,82 +317,148 @@ def genetic_search(search_cfg: Dict, eval_cfg: Dict):
                     hlog.write(json.dumps(row, sort_keys=True) + "\n")
         return fit
 
+    def _write_heartbeat(event: str, **fields) -> None:
+        if not heartbeat_log_path:
+            return
+        try:
+            row = {"event": event, "elapsed_sec": time.time() - run_start, **fields}
+            with open(heartbeat_log_path, "a", encoding="utf-8") as hlog:
+                hlog.write(json.dumps(row, sort_keys=True, default=str) + "\n")
+                hlog.flush()
+        except Exception:
+            # Heartbeat logging must never break the run.
+            pass
+
     def on_generation(ga_instance):
         nonlocal last_best_params, resumed_generation_count
-        fits = ga_instance.last_generation_fitness
-        if fits is None or len(fits) == 0:
-            return
-        best_idx = max(range(len(fits)), key=lambda i: fits[i])
-        best_solution = ga_instance.population[best_idx]
-        best_key = _solution_key(best_solution)
-        if best_key not in cache:
-            params = _decode_solution_to_params(
-                best_solution,
-                base_params,
-                combos,
-                outcomes_per_combo,
-                fixed_probs,
-                vector_cfg,
-            )
-            cache[best_key] = evaluate_candidate(params, eval_cfg)
-        best_eval = cache[best_key]
-        best_params = best_eval["params"]
-        delta_from_prev = _tuple_change_summary(last_best_params, best_params, combos, outcomes_per_combo)
-        delta_from_base = _tuple_change_summary(base_params, best_params, combos, outcomes_per_combo)
-        fit_list = [float(x) for x in fits]
-        fit_sorted = sorted(fit_list)
-        fit_mean = float(sum(fit_list) / len(fit_list))
-        fit_min = float(fit_sorted[0])
-        fit_max = float(fit_sorted[-1])
-        fit_median = float(fit_sorted[len(fit_sorted) // 2])
-        fit_var = sum((x - fit_mean) ** 2 for x in fit_list) / len(fit_list)
-        fit_std = fit_var ** 0.5
         generation_number = generation_offset + resumed_generation_count
-        resumed_generation_count += 1
-        history.append(
-            {
-                "generation": int(generation_number),
-                "best_fitness": float(best_eval["fitness"]),
-                "mean_fitness": fit_mean,
-                "min_fitness": fit_min,
-                "max_fitness": fit_max,
-                "median_fitness": fit_median,
-                "std_fitness": fit_std,
-                "best_win_rate_mean": float(best_eval.get("win_rate_mean", 0.0)),
-                "best_seed_win_rates": copy.deepcopy(best_eval.get("seed_win_rates", [])),
-                "best_avg_yards_per_play": float(best_eval.get("avg_yards_per_play_mean", 0.0)),
-                "best_avg_plays_per_game": float(best_eval.get("avg_plays_per_game_mean", 0.0)),
-                "best_avg_final_score_diff": float(best_eval.get("avg_final_score_diff_mean", 0.0)),
-                "best_avg_offense_scoring_plays_per_game": float(
-                    best_eval.get("avg_offense_scoring_plays_per_game_mean", 0.0)
-                ),
-                "best_constraints": copy.deepcopy(best_eval.get("constraints", {})),
-                "best_penalties": copy.deepcopy(best_eval.get("penalties", {})),
-                "best_solver_summary": summarize_solver_meta(best_eval.get("solver_meta", [])),
-                "best_metrics": copy.deepcopy(best_eval["metrics"]),
-                "best_params": copy.deepcopy(best_params),
-                "tuple_delta_from_prev_best": delta_from_prev,
-                "tuple_delta_from_base": delta_from_base,
-            }
+        _write_heartbeat(
+            "on_generation_enter",
+            generation=int(generation_number),
+            generations_completed=int(getattr(ga_instance, "generations_completed", -1)),
         )
-        if generation_log_path:
-            with open(generation_log_path, "a", encoding="utf-8") as logf:
-                logf.write(json.dumps(history[-1], sort_keys=True) + "\n")
-        if log_generations:
-            g = int(generation_number)
-            changed = delta_from_prev["changed_outcomes_total"]
-            print(
-                f"[gen {g}] best={best_eval['fitness']:.6f} mean={fit_mean:.6f} "
-                f"wr={best_eval.get('win_rate_mean', 0.0):.4f} "
-                f"plays={best_eval.get('avg_plays_per_game_mean', 0.0):.2f} "
-                f"changed_tuples_vs_prev={changed}",
-                flush=True,
+        try:
+            fits = ga_instance.last_generation_fitness
+            if fits is None or len(fits) == 0:
+                _write_heartbeat(
+                    "on_generation_skip_empty_fits",
+                    generation=int(generation_number),
+                )
+                return
+            best_idx = max(range(len(fits)), key=lambda i: fits[i])
+            best_solution = ga_instance.population[best_idx]
+            best_key = _solution_key(best_solution)
+            if best_key not in cache:
+                _write_heartbeat(
+                    "on_generation_best_reeval",
+                    generation=int(generation_number),
+                    reason="best_solution_not_in_cache",
+                )
+                params = _decode_solution_to_params(
+                    best_solution,
+                    base_params,
+                    combos,
+                    outcomes_per_combo,
+                    fixed_probs,
+                    vector_cfg,
+                )
+                cache[best_key] = evaluate_candidate(params, eval_cfg)
+            best_eval = cache[best_key]
+            best_params = best_eval["params"]
+            delta_from_prev = _tuple_change_summary(last_best_params, best_params, combos, outcomes_per_combo)
+            delta_from_base = _tuple_change_summary(base_params, best_params, combos, outcomes_per_combo)
+            fit_list = [float(x) for x in fits]
+            fit_sorted = sorted(fit_list)
+            fit_mean = float(sum(fit_list) / len(fit_list))
+            fit_min = float(fit_sorted[0])
+            fit_max = float(fit_sorted[-1])
+            fit_median = float(fit_sorted[len(fit_sorted) // 2])
+            fit_var = sum((x - fit_mean) ** 2 for x in fit_list) / len(fit_list)
+            fit_std = fit_var ** 0.5
+            history.append(
+                {
+                    "generation": int(generation_number),
+                    "best_fitness": float(best_eval["fitness"]),
+                    "mean_fitness": fit_mean,
+                    "min_fitness": fit_min,
+                    "max_fitness": fit_max,
+                    "median_fitness": fit_median,
+                    "std_fitness": fit_std,
+                    "best_win_rate_mean": float(best_eval.get("win_rate_mean", 0.0)),
+                    "best_seed_win_rates": copy.deepcopy(best_eval.get("seed_win_rates", [])),
+                    "best_avg_yards_per_play": float(best_eval.get("avg_yards_per_play_mean", 0.0)),
+                    "best_avg_plays_per_game": float(best_eval.get("avg_plays_per_game_mean", 0.0)),
+                    "best_avg_final_score_diff": float(best_eval.get("avg_final_score_diff_mean", 0.0)),
+                    "best_avg_offense_scoring_plays_per_game": float(
+                        best_eval.get("avg_offense_scoring_plays_per_game_mean", 0.0)
+                    ),
+                    "best_constraints": copy.deepcopy(best_eval.get("constraints", {})),
+                    "best_penalties": copy.deepcopy(best_eval.get("penalties", {})),
+                    "best_solver_summary": summarize_solver_meta(best_eval.get("solver_meta", [])),
+                    "best_metrics": copy.deepcopy(best_eval["metrics"]),
+                    "best_params": copy.deepcopy(best_params),
+                    "tuple_delta_from_prev_best": delta_from_prev,
+                    "tuple_delta_from_base": delta_from_base,
+                }
             )
-        last_best_params = copy.deepcopy(best_params)
-        ga_instance._resume_history = copy.deepcopy(history)
-        ga_instance._resume_last_best_params = copy.deepcopy(last_best_params)
-        if checkpoint_base:
-            ga_instance.save(checkpoint_base)
+            # Persist progress.jsonl before anything else that could fail
+            # (e.g. ga.save pickling a giant closure), so a plot of
+            # per-generation fitness is always reconstructable.
+            if generation_log_path:
+                try:
+                    with open(generation_log_path, "a", encoding="utf-8") as logf:
+                        logf.write(json.dumps(history[-1], sort_keys=True, default=str) + "\n")
+                        logf.flush()
+                except Exception as exc:
+                    _write_heartbeat(
+                        "on_generation_progress_write_failed",
+                        generation=int(generation_number),
+                        error=repr(exc),
+                        trace=traceback.format_exc(),
+                    )
+            if log_generations:
+                g = int(generation_number)
+                changed = delta_from_prev["changed_outcomes_total"]
+                print(
+                    f"[gen {g}] best={best_eval['fitness']:.6f} mean={fit_mean:.6f} "
+                    f"wr={best_eval.get('win_rate_mean', 0.0):.4f} "
+                    f"plays={best_eval.get('avg_plays_per_game_mean', 0.0):.2f} "
+                    f"changed_tuples_vs_prev={changed}",
+                    flush=True,
+                )
+            last_best_params = copy.deepcopy(best_params)
+            ga_instance._resume_history = copy.deepcopy(history)
+            ga_instance._resume_last_best_params = copy.deepcopy(last_best_params)
+            resumed_generation_count += 1
+            if checkpoint_base:
+                try:
+                    ga_instance.save(checkpoint_base)
+                except Exception as exc:
+                    # Never let a pickle failure (e.g. closure captures a
+                    # non-picklable handle) take down the run. Missing a
+                    # checkpoint just means we can't resume.
+                    _write_heartbeat(
+                        "on_generation_checkpoint_save_failed",
+                        generation=int(generation_number),
+                        error=repr(exc),
+                    )
+            _write_heartbeat(
+                "on_generation_done",
+                generation=int(generation_number),
+                best_fitness=float(best_eval["fitness"]),
+                mean_fitness=fit_mean,
+            )
+        except Exception as exc:
+            # Anything we didn't explicitly guard above. Log loudly and
+            # re-raise so PyGAD aborts instead of limping on silently
+            # without any per-generation records.
+            _write_heartbeat(
+                "on_generation_failed",
+                generation=int(generation_number),
+                error=repr(exc),
+                trace=traceback.format_exc(),
+            )
+            raise
 
     checkpoint_path = _checkpoint_file(checkpoint_base)
     if checkpoint_path and os.path.exists(checkpoint_path):
@@ -428,11 +495,20 @@ def genetic_search(search_cfg: Dict, eval_cfg: Dict):
             _renormalize_probs(best_params)
             return best_params, history
     else:
-        initial_population = []
-        initial_population.append(base_solution)
         noise_sigma = float(vector_cfg.get("init_sigma", 2.0))
-        for _ in range(pop_size - 1):
+        random_frac = float(vector_cfg.get("init_random_fraction", 0.0))
+        # Always keep one individual seeded from the base params so the known
+        # good point is never lost; the rest split between noisy-base and
+        # fully-random according to init_random_fraction.
+        n_random = int(round(random_frac * (pop_size - 1)))
+        n_noisy = (pop_size - 1) - n_random
+
+        initial_population = [base_solution]
+        for _ in range(n_noisy):
             v = [g + rng.gauss(0.0, noise_sigma) for g in base_solution]
+            initial_population.append(v)
+        for _ in range(n_random):
+            v = [rng.uniform(float(gs["low"]), float(gs["high"])) for gs in gene_space]
             initial_population.append(v)
 
         ga = pygad.GA(

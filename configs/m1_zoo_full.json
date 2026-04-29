@@ -2,18 +2,18 @@
   "master_seed": 20260224,
   "search": {
     "seed": 20260224,
-    "population": 12,
-    "elites": 3,
+    "population": 16,
+    "elites": 4,
     "tournament_size": 3,
     "crossover_rate": 0.7,
     "mutation_rate": 0.2,
-    "generations": 10,
+    "generations": 25,
     "reeval_top_k": 2,
     "reeval_reps": 1,
     "reeval_seed_step": 1000,
     "log_generations": true,
-    "generation_log_path": "results/zoo_full/progress.jsonl",
-    "heartbeat_log_path": "results/zoo_full/heartbeat.jsonl",
+    "generation_log_path": "results/zoo_v2/progress.jsonl",
+    "heartbeat_log_path": "results/zoo_v2/heartbeat.jsonl",
     "heartbeat_every": 1,
     "outcomes_per_combo": 5,
     "vector_gene": {
@@ -24,7 +24,8 @@
       "turnover_min": 0.0,
       "turnover_max": 1.0,
       "turnover_threshold": 0.5,
-      "init_sigma": 2.0
+      "init_sigma": 2.0,
+      "init_random_fraction": 0.85
     },
     "base_params": {
       "offense_plays": ["run", "short_pass", "deep_pass"],
@@ -158,6 +159,6 @@
       "tol": 1e-09,
       "heartbeat_every_t": 5
     },
-    "heartbeat_log_path": "results/zoo_full/heartbeat.jsonl"
+    "heartbeat_log_path": "results/zoo_v2/heartbeat.jsonl"
   }
 }

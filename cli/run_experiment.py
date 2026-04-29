@@ -117,10 +117,18 @@ def run_experiment(config: dict, out_dir: str):
     random.seed(master_seed)
 
     search_cfg = dict(config["search"])
-    eval_cfg = config["eval"]
+    eval_cfg = dict(config["eval"])
+    heartbeat_path = str(Path(out_dir) / "heartbeat.jsonl")
     search_cfg["checkpoint_base"] = str(Path(out_dir) / "ga_checkpoint")
     search_cfg["generation_log_path"] = str(Path(out_dir) / "progress.jsonl")
-    search_cfg["heartbeat_log_path"] = str(Path(out_dir) / "heartbeat.jsonl")
+    search_cfg["heartbeat_log_path"] = heartbeat_path
+    # Plumb the same heartbeat log through eval_cfg so the inner DP/LP solver
+    # emits reach_layer / solver_time_layer / seed_* events to the same file.
+    # Without this the status banner's dp_layer/reach_layer stay null.
+    eval_cfg["heartbeat_log_path"] = heartbeat_path
+    solver_cfg = dict(eval_cfg.get("solver", {}))
+    solver_cfg["heartbeat_log_path"] = heartbeat_path
+    eval_cfg["solver"] = solver_cfg
 
     best_params, history = genetic_search(search_cfg, eval_cfg)
     best_eval = evaluate_candidate(best_params, eval_cfg)
