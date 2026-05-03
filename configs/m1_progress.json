@@ -413,10 +413,7 @@
     "sim_games": 40,
     "policy_probe_states": 100,
     "constraint_penalty_weight": 0.1,
-    "balance_target": 0.5,
-    "balance_tolerance": 0.15,
-    "balance_weight": 0.14285714285714285,
-    "yards_score_weight": 0.14285714285714285,
+    "yards_score_weight": 0.16666666666666666,
     "yards_per_play_range": [
       2.0,
       9.0
@@ -434,11 +431,11 @@
       "expected_turnover_slack": 0.2
     },
     "weights": [
-      0.14285714285714285,
-      0.14285714285714285,
-      0.14285714285714285,
-      0.14285714285714285,
-      0.14285714285714285
+      0.16666666666666666,
+      0.16666666666666666,
+      0.16666666666666666,
+      0.16666666666666666,
+      0.16666666666666666
     ],
     "solver": {
       "type": "dp_lp",

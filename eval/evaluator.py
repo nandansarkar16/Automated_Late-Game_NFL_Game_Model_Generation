@@ -209,18 +209,11 @@ def evaluate_candidate(params: Dict, eval_cfg: Dict) -> Dict:
     avg_final_score_diff = sum(avg_final_score_diff_vals) / len(avg_final_score_diff_vals)
     avg_offense_scoring_plays = sum(avg_offense_scoring_plays_vals) / len(avg_offense_scoring_plays_vals)
 
-    # Keep game models near a target offense/defense balance instead of pushing
-    # offense win rate as high as possible.
-    balance_target = float(eval_cfg.get("balance_target", 0.5))
-    balance_tolerance = max(1e-9, float(eval_cfg.get("balance_tolerance", 0.15)))
-    balance_gap = abs(win_rate_mean - balance_target)
-    balance_score = max(0.0, 1.0 - min(1.0, balance_gap / balance_tolerance))
-
     yards_low, yards_high = eval_cfg.get("yards_per_play_range", [2.0, 9.0])
     realism_slack = float(eval_cfg.get("realism_slack", 8.0))
     yards_score = _band_score(avg_yards_per_play, float(yards_low), float(yards_high), realism_slack)
 
-    weights = eval_cfg.get("weights", [1.0 / 7.0] * 5)
+    weights = eval_cfg.get("weights", [1.0 / 6.0] * 5)
     metrics = composite_score(
         aggregate_diversity,
         aggregate_sensitivity,
@@ -229,17 +222,13 @@ def evaluate_candidate(params: Dict, eval_cfg: Dict) -> Dict:
         non_degeneracy,
         weights,
     )
-    balance_weight = float(eval_cfg.get("balance_weight", 1.0 / 7.0))
-    yards_weight = float(eval_cfg.get("yards_score_weight", 1.0 / 7.0))
-    metrics["BalanceScore"] = balance_score
+    yards_weight = float(eval_cfg.get("yards_score_weight", 1.0 / 6.0))
     metrics["AvgYardsPerPlay"] = avg_yards_per_play
     metrics["AvgPlaysPerGame"] = avg_plays_per_game
     metrics["AvgFinalScoreDiff"] = avg_final_score_diff
     metrics["AvgOffenseScoringPlaysPerGame"] = avg_offense_scoring_plays
     metrics["YardsPlausibility"] = yards_score
     metrics["DegeneracyPenalty"] = aggregate_degeneracy
-    # Use raw weighted sum. Relative importance comes from explicit weights.
-    metrics["composite_score"] += balance_weight * balance_score
     metrics["composite_score"] += yards_weight * yards_score
 
     hard_constraints = {

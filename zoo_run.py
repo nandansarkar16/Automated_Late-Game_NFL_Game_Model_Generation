@@ -14,8 +14,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Dict, List
 
-DEFAULT_CONFIG = "configs/m1_zoo_full.json"
-DEFAULT_OUT = "results/zoo_v2"
+DEFAULT_CONFIG = "configs/m1_random_init.json"
+DEFAULT_OUT = "results/m1_random_init"
 META_FILE = "zoo_job_meta.json"
 STATUS_FILE = "zoo_status.json"
 

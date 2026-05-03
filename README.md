@@ -1,85 +1,107 @@
-# Automated Late-Game NFL Game Model Generation
+# Automated Game-Model Synthesis for Late-Game NFL Strategy
 
-This repo is my working code for a simplified fourth-quarter football game model.
-The main workflow is:
+This repository contains the code for my senior thesis in Applied Mathematics at Yale. The project asks an unusual question: instead of finding the best way to *play* a game, can we automatically find the best *model* of the game itself?
 
-1. Define a game model (state transitions, play outcomes, scoring logic).
-2. Solve equilibrium policies with dynamic programming + per-state zero-sum matrix solve.
-3. Score that game model with simulation-based metrics.
-4. Use a genetic algorithm to search for better game model parameters.
+## What this project does
 
-The game is still intentionally simplified. The state is
-`(yardline, down, distance, time_ticks, score_diff)`, so it does not carry
-explicit possession or drive IDs. To make that abstraction less unrealistic,
-the environment now uses a compressed opponent-response jump after scores and
-other possession-ending events. That jump removes extra clock and applies a
-small opponent scoring distribution based on whether the opponent would be
-starting deep, in a normal situation, or on a short field.
+The game studied here is a simplified version of **NFL Strategy**, a two-player simulation of American football. In the late-game two-minute drill, an offense tries to score before time runs out while a defense tries to burn the clock. On each play, both sides simultaneously pick a play call, and the outcome (yards gained, time consumed, possession lost) is sampled from a probability table specific to that matchup. The full collection of these tables is called the **model** of the game.
 
-## Project layout
+Most work on NFL Strategy takes the model as given and asks: what is the best way to play? This project inverts that. The model itself is what we search over. The goal is to automatically find model parameters such that the resulting game is strategically interesting---its optimal policies are genuinely mixed, sensitive to game context, and statistically plausible as late-game football.
 
-- `run_experiment.py`
-  - tiny root wrapper so experiments can be launched from repo root.
+## How it works
 
-- `cli/run_experiment.py`
-  - loads config, runs GA search, writes `history.jsonl`, `history.csv`, `best_candidate.json`, and `report.md`.
+The pipeline has two nested components.
 
-- `env/quarter_strategy.py`
-  - core environment.
-  - state is `(yardline, down, distance, time_ticks, score_diff)`.
-  - handles play outcomes, first downs, touchdowns, field goals, punts, and the compressed opponent-response layer after possession changes.
+**Inner loop (exact equilibrium solver).** For any fixed model, the game is a finite-horizon two-player zero-sum stochastic game. Because every play consumes clock, the state graph is acyclic and can be solved exactly by backward induction. At each reachable game state, a 3×3 zero-sum matrix game is assembled and solved by support enumeration---a method that checks all possible mixed-strategy support pairs and returns the exact equilibrium. This gives both players' optimal mixed strategies and the game value at every state.
 
-- `agents/dp_lp_solver.py`
-  - inner-loop solver.
-  - does backward DP over time and solves each state’s offense/defense matrix game.
+**Outer loop (genetic algorithm).** The model parameters (yards, time consumed, and turnover flag for each play-outcome tuple) are encoded as a real-valued genome with 135 genes. A real-coded genetic algorithm searches over this space, evaluating each candidate by running the inner loop and scoring the resulting equilibrium game on six criteria:
 
-- `eval/evaluator.py`
-  - evaluates one candidate model end-to-end.
-  - runs solver, simulates policy profile, computes final fitness and metrics.
+1. **Strategic Diversity** --- does the optimal policy genuinely mix across play calls?
+2. **State Sensitivity** --- does the policy shift sensibly between trailing, tied, and leading situations?
+3. **Outcome Plausibility** --- are the expected yards, clock consumption, and turnover rates within realistic football ranges?
+4. **Robustness** --- is the fitness stable across different random seeds?
+5. **Non-Degeneracy** --- does no single play dominate across all situations?
+6. **Yards-per-Play Plausibility** --- are simulated drives producing realistic yardage?
 
-- `eval/metrics.py`
-  - metric helper functions (diversity, sensitivity, plausibility, robustness, non-degeneracy).
+These six terms are averaged equally to produce a single composite fitness score in [0, 1].
 
-- `search/genetic_search.py`
-  - GA outer loop (`PyGAD`).
-  - decodes genes into outcome tuples, evaluates candidates, logs tuple changes and fitness traces.
+## Repository layout
 
-- `configs/*.json`
-  - experiment configs.
-  - `m1_smoke.json` is the quick check.
-  - `m1_zoo_parity_pilot.json` is the heavy local/zoo-style config.
-
-- `tests/`
-  - unit and integration tests for environment, solver, GA behavior, and pipeline.
-
-- `hw5/`
-  - old class files kept for reference only.
+```
+env/quarter_strategy.py       # Game environment: state transitions, scoring, opponent response
+agents/dp_lp_solver.py        # Inner loop: backward DP + per-state zero-sum LP solver
+eval/evaluator.py             # Evaluates one candidate model end-to-end
+eval/metrics.py               # Individual fitness term implementations
+search/genetic_search.py      # Outer loop: genetic algorithm (via PyGAD)
+cli/run_experiment.py         # Entry point: loads config, runs GA, writes artifacts
+run_experiment.py             # Thin root wrapper to launch from repo root
+zoo_run.py                    # Helper for starting/monitoring/stopping long runs
+tools/calibrate_runtime.py    # Times a single candidate eval and projects total runtime
+tools/analyze_run.py          # Post-run analysis and convergence plots
+tools/random_search.py        # Random-search baseline (no evolution)
+configs/                      # Experiment configurations (JSON)
+results/                      # Output directories (written at runtime)
+tests/                        # Unit and integration tests
+```
 
 ## Setup
 
-Use Python 3.9+.
+Requires Python 3.9+.
 
-Install dependency:
+Install the one external dependency:
 
 ```bash
 python3 -m pip install --user pygad
 ```
 
-## Run commands
+## Running an experiment
 
-Quick smoke run:
+**Quick smoke test** (completes in ~2 minutes, just checks that the pipeline is wired correctly):
 
 ```bash
 python3 run_experiment.py --config configs/m1_smoke.json --out results/m1_smoke
 ```
 
-Heavier run:
+**Production run** (the config used for the main thesis results, ~5–7 hours on a laptop):
 
 ```bash
-python3 run_experiment.py --config configs/m1.json --out results/m1
+python3 zoo_run.py start --config configs/m1_local_overnight.json --out results/m1_local_overnight
 ```
 
-Run tests:
+**Check status of a running experiment:**
+
+```bash
+python3 zoo_run.py status --out results/m1_local_overnight
+```
+
+**Tail live output:**
+
+```bash
+python3 zoo_run.py tail --out results/m1_local_overnight --tail-lines 40
+```
+
+**Stop a run:**
+
+```bash
+python3 zoo_run.py stop --out results/m1_local_overnight
+```
+
+If a long run is interrupted, restarting with the same `--out` directory resumes from the last completed generation rather than starting over.
+
+## Estimating runtime before committing
+
+Before launching a long run, use the calibration tool to time a single candidate evaluation and project total wall-clock time:
+
+```bash
+python3 tools/calibrate_runtime.py \
+  --config configs/m1_local_overnight.json \
+  --population 20 --generations 9 \
+  --target-hours 5 --stress 4
+```
+
+`--stress N` samples N additional random candidates from the gene space to get a realistic distribution of evaluation times (some candidates are faster or slower than the hand-designed baseline).
+
+## Running tests
 
 ```bash
 python3 -m unittest discover -s tests -v
@@ -87,77 +109,47 @@ python3 -m unittest discover -s tests -v
 
 ## Output files
 
-Each run writes:
+Each run writes the following into its output directory:
 
-- `history.jsonl` (full per-generation records)
-- `history.csv` (easy spreadsheet view)
-- `best_candidate.json` (best params + metrics)
-- `report.md` (auto summary)
+| File | Contents |
+|---|---|
+| `history.jsonl` | Full per-generation records (population fitnesses, best candidate) |
+| `history.csv` | Same data in tabular form |
+| `best_candidate.json` | Best evolved model parameters and all fitness metrics |
+| `progress.jsonl` | Per-generation summary (best/mean fitness, used for plotting) |
+| `report.md` | Auto-generated text summary |
+| `heartbeat.jsonl` | (Long runs) Inner-loop progress logs per time layer |
 
-For heavy debug runs, heartbeat logs may also be written to `results/.../heartbeat.jsonl`.
+## Post-run analysis
 
-## Zoo run helper
-
-For long runs, use the helper script instead of running the experiment command manually.
-
-Start in background:
+After a run completes, generate convergence plots and a parameter diff table:
 
 ```bash
-python3 zoo_run.py start --config configs/m1_zoo_full.json --out results/zoo_full
+python3 tools/analyze_run.py \
+  --run-dir results/m1_local_overnight \
+  --config configs/m1_local_overnight.json
 ```
 
-Check progress + stage + ETA:
+This writes `convergence.png` and `params_diff.csv` into the run directory.
+
+## Random search baseline
+
+To evaluate how much the genetic algorithm adds over pure random sampling:
 
 ```bash
-python3 zoo_run.py status --out results/zoo_full
-```
-
-Tail heartbeat/progress/log output:
-
-```bash
-python3 zoo_run.py tail --out results/zoo_full --tail-lines 40
-```
-
-Stop run:
-
-```bash
-python3 zoo_run.py stop --out results/zoo_full
-```
-
-`configs/m1_zoo_full.json` is the default full config with `max_time_ticks=30`, which is a better runtime/reachability tradeoff than 45 on local hardware.
-
-If a long Zoo run stops mid-way, restarting the same output directory now
-resumes from the last completed GA generation using a saved checkpoint instead
-of starting from generation 0 again.
-
-## Local overnight runs
-
-`configs/m1_local_overnight.json` is a smaller but still legitimate config
-targeted at laptop-scale runs (~2-5h wall clock). It uses `max_time_ticks=12`,
-tightened `vector_gene` bounds to prevent the GA from wandering into gene
-regions that explode the reachable state set, and 2 seeds per eval.
-
-Before committing to a long run, sanity-check wall clock with the calibrator:
-
-```bash
-python3 tools/calibrate_runtime.py \
+python3 tools/random_search.py \
   --config configs/m1_local_overnight.json \
-  --seeds 2 --population 10 --generations 12 \
-  --target-hours 5 --stress 4
+  --n-samples 200 \
+  --out results/random_search_baseline \
+  --seed 9999
 ```
 
-`--stress N` samples N random candidates from the GA gene space and reports
-the real per-eval time distribution (min/median/mean/max). The base eval alone
-is not representative because the GA mutates genes that directly drive solver
-cost.
+## Configuration
 
-Launch the same way as a Zoo run:
+All experiment parameters live in a JSON config file. The key sections are:
 
-```bash
-python3 zoo_run.py start --config configs/m1_local_overnight.json --out results/m1_local_overnight
-python3 zoo_run.py status --out results/m1_local_overnight
-```
+- **`search`** --- population size, generations, elites, gene bounds, initialization strategy
+- **`eval`** --- number of seeds, simulated games per seed, policy probe states, plausibility bands
+- **`master_seed`** --- top-level random seed for reproducibility
 
-The status output now includes a one-line banner with current generation,
-candidate, seed, DP time layer, elapsed, and ETA. Use `--verbose` for the
-full JSON dump.
+The smoke config (`configs/m1_smoke.json`) is the minimal wiring check. The overnight config (`configs/m1_local_overnight.json`) is the main experimental config used in the thesis.

@@ -2,32 +2,27 @@
   "master_seed": 20260224,
   "search": {
     "seed": 20260224,
-    "population": 2,
-    "elites": 1,
-    "tournament_size": 2,
+    "population": 10,
+    "elites": 2,
+    "tournament_size": 3,
     "crossover_rate": 0.7,
     "mutation_rate": 0.2,
-    "generations": 1,
-    "reeval_top_k": 0,
-    "reeval_reps": 0,
+    "generations": 18,
+    "reeval_top_k": 2,
+    "reeval_reps": 1,
     "reeval_seed_step": 1000,
-    "genome_space": {
-      "prob_sigma": 0.06,
-      "continuous": {
-        "max_time_ticks": {
-          "min": 20,
-          "max": 40,
-          "sigma": 2.5
-        }
-      },
-      "discrete": {
-        "turnover_on_downs": {
-          "values": [
-            true,
-            false
-          ]
-        }
-      }
+    "log_generations": true,
+    "heartbeat_every": 1,
+    "outcomes_per_combo": 5,
+    "vector_gene": {
+      "yards_min": -10,
+      "yards_max": 30,
+      "time_min": 1,
+      "time_max": 6,
+      "turnover_min": 0.0,
+      "turnover_max": 1.0,
+      "turnover_threshold": 0.5,
+      "init_sigma": 2.0
     },
     "base_params": {
       "offense_plays": [
@@ -40,7 +35,7 @@
         "blitz",
         "prevent"
       ],
-      "max_time_ticks": 45,
+      "max_time_ticks": 12,
       "max_score_diff": 21,
       "turnover_on_downs": true,
       "field_goal": {
@@ -66,7 +61,7 @@
             80,
             1,
             10,
-            30,
+            12,
             0
           ],
           "prob": 0.35
@@ -76,7 +71,7 @@
             65,
             2,
             7,
-            24,
+            10,
             -3
           ],
           "prob": 0.3
@@ -86,7 +81,7 @@
             45,
             3,
             6,
-            16,
+            8,
             0
           ],
           "prob": 0.2
@@ -96,12 +91,44 @@
             30,
             1,
             10,
-            9,
+            6,
             3
           ],
           "prob": 0.15
         }
       ],
+      "opponent_response": {
+        "clock_ticks": [
+          2,
+          4,
+          6
+        ],
+        "clock_probs": [
+          0.4,
+          0.4,
+          0.2
+        ],
+        "deep_own_territory": [
+          0.68,
+          0.18,
+          0.14
+        ],
+        "normal": [
+          0.5,
+          0.25,
+          0.25
+        ],
+        "score_values": [
+          0,
+          3,
+          7
+        ],
+        "short_field": [
+          0.25,
+          0.25,
+          0.5
+        ]
+      },
       "play_outcomes": {
         "run|base": [
           {
@@ -392,38 +419,29 @@
           }
         ]
       }
-    },
-    "outcomes_per_combo": 5,
-    "vector_gene": {
-      "yards_min": -20,
-      "yards_max": 60,
-      "time_min": 1,
-      "time_max": 8,
-      "turnover_min": 0.0,
-      "turnover_max": 1.0,
-      "turnover_threshold": 0.5,
-      "init_sigma": 2.0
-    },
-    "generation_log_path": "results/zoo_parity_micro_outer/progress.jsonl",
-    "log_generations": true,
-    "heartbeat_log_path": "results/zoo_parity_micro_outer/heartbeat.jsonl",
-    "heartbeat_every": 1
+    }
   },
   "eval": {
     "seeds": [
       11,
-      19,
-      23
+      19
     ],
-    "sim_games": 300,
-    "policy_probe_states": 800,
+    "sim_games": 120,
+    "policy_probe_states": 600,
     "constraint_penalty_weight": 0.1,
-    "yards_score_weight": 0.16666666666666666,
     "yards_per_play_range": [
       2.0,
       9.0
     ],
     "realism_slack": 8.0,
+    "weights": [
+      0.16666666666666666,
+      0.16666666666666666,
+      0.16666666666666666,
+      0.16666666666666666,
+      0.16666666666666666
+    ],
+    "yards_score_weight": 0.16666666666666666,
     "plausibility": {
       "expected_yards_min": -3.0,
       "expected_yards_max": 12.0,
@@ -435,18 +453,10 @@
       "expected_turnover_max": 0.35,
       "expected_turnover_slack": 0.2
     },
-    "weights": [
-      0.16666666666666666,
-      0.16666666666666666,
-      0.16666666666666666,
-      0.16666666666666666,
-      0.16666666666666666
-    ],
     "solver": {
       "type": "dp_lp",
       "tol": 1e-09,
-      "heartbeat_every_t": 5
-    },
-    "heartbeat_log_path": "results/zoo_parity_micro_outer/heartbeat.jsonl"
+      "heartbeat_every_t": 2
+    }
   }
 }
