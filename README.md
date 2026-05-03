@@ -1,6 +1,6 @@
 # Automated Game-Model Synthesis for Late-Game NFL Strategy
 
-This repository contains the code for my senior thesis in Applied Mathematics at Yale. The project asks an unusual question: instead of finding the best way to *play* a game, can we automatically find the best *model* of the game itself?
+This repository contains the code for my senior thesis in Applied Mathematics at Yale. The project asks the question: instead of finding the best way to *play* a game, can we automatically find the best *model* of the game itself?
 
 ## What this project does
 
@@ -151,5 +151,3 @@ All experiment parameters live in a JSON config file. The key sections are:
 - **`search`** --- population size, generations, elites, gene bounds, initialization strategy
 - **`eval`** --- number of seeds, simulated games per seed, policy probe states, plausibility bands
 - **`master_seed`** --- top-level random seed for reproducibility
-
-The smoke config (`configs/m1_smoke.json`) is the minimal wiring check. The overnight config (`configs/m1_local_overnight.json`) is the main experimental config used in the thesis.
